@@ -1,0 +1,77 @@
+on:
+  workflow_call:
+    secrets:
+      GH_TOKEN:
+        required: true
+    inputs:
+      labels:
+        type: string
+        required: false
+      assignees:
+        type: string
+        required: false
+      projects:
+        type: string
+        required: false
+
+jobs:
+  patch-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add labels
+        if: ${{ inputs.labels != '' }}
+        uses: actions/github-script@v8
+        env:
+          LABELS: ${{inputs.labels}}
+        with:
+          script: |
+            github.rest.issues.addLabels({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: process.env.LABELS.split(", ")
+            })
+      
+      - name: Add assignees
+        uses: actions/github-script@v8
+        if: ${{ inputs.assignees != '' }}
+        env:
+          ASSIGNEES: ${{inputs.assignees}}
+        with:
+          script: |
+            github.rest.issues.addAssignees({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              assignees: process.env.ASSIGNEES.split(", ")
+            })
+
+      - name: Add to project
+        uses: actions/github-script@v8
+        if: ${{ inputs.projects != '' }}
+        env:
+          PROJECTS: ${{inputs.projects}}
+        with:
+          github-token: ${{ secrets.GH_TOKEN }}
+          script: |
+            const mutation = `
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(
+                  input: {
+                    projectId: $projectId,
+                    contentId: $contentId
+                  }
+                ) {
+                  item {
+                    id
+                  }
+                }
+              }
+            `
+
+            for (const projectId of process.env.PROJECTS.split(", ")) {
+              await github.graphql(mutation, {
+                projectId,
+                contentId: context.payload.issue.node_id
+              })
+            }
